@@ -1,0 +1,894 @@
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import marked from 'marked';
+import cytoscape from 'cytoscape';
+
+const styles = {
+  appContainer: {
+    display: 'flex',
+    height: '100vh',
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    color: '#333',
+    backgroundColor: '#f9f9f9',
+    flexDirection: 'column',
+  },
+  header: {
+    backgroundColor: '#2f80ed',
+    color: 'white',
+    padding: '1rem 1.5rem',
+    fontWeight: '700',
+    fontSize: '1.5rem',
+    userSelect: 'none',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+  },
+  main: {
+    flex: 1,
+    display: 'flex',
+    overflow: 'hidden',
+  },
+  sidebar: {
+    width: 280,
+    background: 'white',
+    borderRight: '1px solid #ddd',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  sidebarHeader: {
+    padding: '0.75rem 1rem',
+    borderBottom: '1px solid #ddd',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '0.4rem 0.6rem',
+    border: '1px solid #ccc',
+    borderRadius: 4,
+    fontSize: 14,
+  },
+  tagFilter: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+    maxHeight: 70,
+    overflowY: 'auto',
+    paddingRight: 2,
+  },
+  tagChip: (selected) => ({
+    backgroundColor: selected ? '#2f80ed' : '#e1eaff',
+    color: selected ? 'white' : '#2f80ed',
+    fontSize: 12,
+    padding: '2px 8px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    userSelect: 'none',
+    transition: 'background-color 0.2s',
+  }),
+  notesList: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '0.5rem 1rem',
+  },
+  noteItem: (selected) => ({
+    padding: '0.5rem 0.75rem',
+    borderRadius: 6,
+    cursor: 'pointer',
+    userSelect: 'none',
+    fontWeight: 500,
+    borderLeft: selected ? '4px solid #2f80ed' : '4px solid transparent',
+    backgroundColor: selected ? '#e1eaff' : 'transparent',
+    transition: 'background-color 0.15s, border-color 0.3s',
+  }),
+  mainContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    background: 'white',
+    padding: '1rem 1.25rem',
+    overflowY: 'auto',
+  },
+  noteHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 12,
+  },
+  noteTitle: {
+    margin: 0,
+    fontWeight: 700,
+    fontSize: 20,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  tagInput: {
+    flexShrink: 0,
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+    backgroundColor: '#f4f6fc',
+    borderRadius: 4,
+    padding: '2px 8px',
+    maxWidth: '60%',
+    fontSize: 14,
+  },
+  tagInputField: {
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    fontSize: 14,
+    minWidth: 50,
+  },
+  tagBubble: {
+    backgroundColor: '#2f80ed',
+    color: 'white',
+    padding: '2px 8px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    userSelect: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  closeSpan: {
+    fontWeight: 700,
+    cursor: 'pointer',
+    userSelect: 'none',
+  },
+  noteBodyContainer: {
+    display: 'flex',
+    gap: 16,
+    flex: 1,
+    minHeight: 250,
+  },
+  textarea: {
+    flex: 1,
+    fontFamily: "'Courier New', Courier, monospace",
+    fontSize: 16,
+    lineHeight: 1.5,
+    resize: 'vertical',
+    padding: '10px 14px',
+    border: '1px solid #ccc',
+    borderRadius: 6,
+    backgroundColor: '#fcfcfc',
+    transition: 'border-color 0.3s',
+  },
+  textareaFocus: {
+    borderColor: '#2f80ed',
+    outline: 'none',
+    backgroundColor: 'white',
+  },
+  markdownPreview: {
+    flex: 1,
+    border: '1px solid #ddd',
+    borderRadius: 6,
+    padding: 12,
+    backgroundColor: '#fefefe',
+    overflowY: 'auto',
+    fontSize: 15,
+    lineHeight: 1.4,
+    color: '#222',
+    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)',
+  },
+  noteInfo: {
+    marginTop: 16,
+    display: 'flex',
+    gap: 32,
+    fontSize: 14,
+    flexWrap: 'wrap',
+  },
+  noteInfoSection: {
+    flex: 1,
+    minWidth: 220,
+    maxHeight: 120,
+    overflowY: 'auto',
+    border: '1px solid #ddd',
+    borderRadius: 6,
+    padding: '8px 12px',
+    backgroundColor: '#fafafa',
+  },
+  noteInfoH3: {
+    marginTop: 0,
+    marginBottom: 6,
+    fontWeight: 600,
+    fontSize: 16,
+    borderBottom: '1px solid #ccc',
+    paddingBottom: 4,
+  },
+  linkList: {
+    paddingLeft: 20,
+    margin: 0,
+    listStyleType: 'disc',
+  },
+  linkListItem: {
+    cursor: 'pointer',
+    color: '#2f80ed',
+    userSelect: 'none',
+    marginBottom: 4,
+  },
+  manualLink: {
+    marginTop: 16,
+    fontSize: 14,
+    display: 'flex',
+  },
+  manualLinkInput: {
+    flex: 1,
+    marginRight: 8,
+    border: '1px solid #bbb',
+    borderRadius: 4,
+    padding: '6px 10px',
+    fontSize: 14,
+  },
+  manualLinkButton: {
+    backgroundColor: '#2f80ed',
+    color: 'white',
+    border: 'none',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontWeight: 600,
+    padding: '6px 14px',
+    transition: 'background-color 0.25s',
+  },
+  manualLinkButtonHover: {
+    backgroundColor: '#1366d6',
+  },
+  viewToggle: {
+    marginTop: 16,
+    borderTop: '1px solid #ddd',
+    paddingTop: 16,
+    display: 'flex',
+    gap: 16,
+    alignItems: 'center',
+  },
+  viewToggleButton: (active) => ({
+    cursor: 'pointer',
+    padding: '6px 20px',
+    borderRadius: 5,
+    border: '1px solid #2f80ed',
+    backgroundColor: active ? '#2f80ed' : 'transparent',
+    color: active ? 'white' : '#2f80ed',
+    fontWeight: 600,
+    transition: 'background-color 0.25s, color 0.25s',
+  }),
+  graphContainer: {
+    marginTop: 16,
+    height: 250,
+    border: '1px solid #ddd',
+    borderRadius: 6,
+    backgroundColor: 'white',
+  },
+  textMap: {
+    marginTop: 12,
+    fontFamily: 'monospace',
+    whiteSpace: 'pre-wrap',
+    backgroundColor: '#f2f2f2',
+    borderRadius: 6,
+    padding: 12,
+    height: 250,
+    overflowY: 'auto',
+    userSelect: 'text',
+  },
+  noNotesFound: {
+    fontStyle: 'italic',
+    color: '#666',
+    padding: 8,
+  }
+};
+
+function NoteApp() {
+  // Mock note data & state
+  const [notes, setNotes] = useState([
+    {
+      id: '1',
+      title: 'Welcome Note',
+      tags: ['welcome', 'intro'],
+      body: 'This is the **welcome** note. You can link to [[Second Note]].',
+      outgoingLinks: ['2'],
+      backlinks: ['3'],
+    },
+    {
+      id: '2',
+      title: 'Second Note',
+      tags: ['example', 'test'],
+      body: 'This is the second note body.',
+      outgoingLinks: [],
+      backlinks: ['1'],
+    },
+    {
+      id: '3',
+      title: 'Backlinker',
+      tags: [],
+      body: 'This note links to [[Welcome Note]].',
+      outgoingLinks: ['1'],
+      backlinks: [],
+    },
+  ]);
+  const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const [activeTagFilters, setActiveTagFilters] = useState(new Set());
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [newTagInput, setNewTagInput] = useState('');
+  const [manualLinkInput, setManualLinkInput] = useState('');
+  const [graphView, setGraphView] = useState('text'); // 'text' or 'graph'
+  const [textareaFocused, setTextareaFocused] = useState(false);
+
+  const textareaRef = useRef(null);
+  const graphContainerRef = useRef(null);
+  const cyRef = useRef(null);
+
+  // Helpers
+
+  function unique(arr) {
+    return Array.from(new Set(arr));
+  }
+
+  function getAllTags() {
+    return unique(notes.flatMap((n) => n.tags)).sort();
+  }
+
+  function filterNotes() {
+    return notes.filter((n) => {
+      const tagMatch =
+        activeTagFilters.size === 0 ||
+        n.tags.some((t) => activeTagFilters.has(t));
+      const keyword = searchKeyword.toLowerCase();
+      const keywordMatch =
+        keyword === '' ||
+        n.title.toLowerCase().includes(keyword) ||
+        n.body.toLowerCase().includes(keyword) ||
+        n.tags.some((t) => t.toLowerCase().includes(keyword));
+      return tagMatch && keywordMatch;
+    });
+  }
+
+  function findNoteById(id) {
+    return notes.find((n) => n.id === id);
+  }
+
+  function findNoteByTitle(title) {
+    return notes.find(
+      (n) => n.title.toLowerCase() === title.toLowerCase().trim()
+    );
+  }
+
+  // Rendering helpers for tags filter
+  function toggleTagFilter(tag) {
+    const newSet = new Set(activeTagFilters);
+    if (newSet.has(tag)) {
+      newSet.delete(tag);
+    } else {
+      newSet.add(tag);
+    }
+    setActiveTagFilters(newSet);
+  }
+
+  // Select note handler
+  function selectNote(id) {
+    setSelectedNoteId(id);
+  }
+
+  // Update note's tags
+  function addTagToNote(tag) {
+    if (!selectedNoteId) return;
+    const normalized = tag.trim().toLowerCase();
+    if (normalized === '') return;
+    setNotes((prevNotes) =>
+      prevNotes.map((note) => {
+        if (note.id === selectedNoteId) {
+          if (note.tags.includes(normalized)) return note;
+          return { ...note, tags: [...note.tags, normalized] };
+        }
+        return note;
+      })
+    );
+  }
+
+  function removeTagFromNote(tag) {
+    if (!selectedNoteId) return;
+    setNotes((prevNotes) =>
+      prevNotes.map((note) => {
+        if (note.id === selectedNoteId) {
+          return {
+            ...note,
+            tags: note.tags.filter((t) => t !== tag),
+          };
+        }
+        return note;
+      })
+    );
+  }
+
+  // Update note body
+  function updateNoteBody(body) {
+    if (!selectedNoteId) return;
+    setNotes((prevNotes) =>
+      prevNotes.map((note) => {
+        if (note.id === selectedNoteId) {
+          return { ...note, body };
+        }
+        return note;
+      })
+    );
+  }
+
+  // Update outgoing links when note body changes by parsing [[Note Title]]
+  function updateOutgoingLinks(noteId, body) {
+    const pattern = /\[\[(.+?)\]\]/g;
+    const found = new Set();
+    let match;
+    while ((match = pattern.exec(body)) !== null) {
+      const linkedTitle = match[1].trim().toLowerCase();
+      const linkedNote = notes.find(
+        (n) => n.title.toLowerCase() === linkedTitle
+      );
+      if (linkedNote) {
+        found.add(linkedNote.id);
+      }
+    }
+    // Update outgoing links and backlinks accordingly
+    setNotes((prevNotes) => {
+      let modifiedNotes = prevNotes.map((note) => {
+        // For the note changing body, update outgoingLinks
+        if (note.id === noteId) {
+          return { ...note, outgoingLinks: Array.from(found) };
+        }
+        return note;
+      });
+
+      // Reset backlinks for all notes to empty array to recalc
+      modifiedNotes = modifiedNotes.map((note) => ({ ...note, backlinks: [] }));
+      // Recalculate backlinks
+      modifiedNotes.forEach((note) => {
+        note.outgoingLinks.forEach((targetId) => {
+          const targetNote = modifiedNotes.find((n) => n.id === targetId);
+          if (targetNote) {
+            if (!targetNote.backlinks.includes(note.id)) {
+              targetNote.backlinks.push(note.id);
+            }
+          }
+        });
+      });
+      return modifiedNotes;
+    });
+  }
+
+  // Add manual link between notes
+  function addLinkBetweenNotes(fromId, toTitle) {
+    if (!fromId || !toTitle) return;
+    const toNote = findNoteByTitle(toTitle);
+    if (!toNote) {
+      alert(`Note titled "${toTitle}" not found.`);
+      return;
+    }
+    setNotes((prevNotes) => {
+      let modifiedNotes = prevNotes.map((note) => {
+        // Add to outgoingLinks of from note
+        if (note.id === fromId) {
+          if (!note.outgoingLinks.includes(toNote.id)) {
+            return { ...note, outgoingLinks: [...note.outgoingLinks, toNote.id] };
+          }
+        }
+        return note;
+      });
+      // Reset backlinks for all notes to empty array to recalc
+      modifiedNotes = modifiedNotes.map((note) => ({ ...note, backlinks: [] }));
+      // Recalculate backlinks
+      modifiedNotes.forEach((note) => {
+        note.outgoingLinks.forEach((targetId) => {
+          const targetNote = modifiedNotes.find((n) => n.id === targetId);
+          if (targetNote) {
+            if (!targetNote.backlinks.includes(note.id)) {
+              targetNote.backlinks.push(note.id);
+            }
+          }
+        });
+      });
+      return modifiedNotes;
+    });
+  }
+
+  // Render text map
+  function renderTextMap() {
+    let mapText = '';
+    notes.forEach((note) => {
+      mapText += note.title + '\n';
+      if (note.outgoingLinks.length > 0) {
+        note.outgoingLinks.forEach((oid) => {
+          const linkedNote = findNoteById(oid);
+          if (linkedNote) {
+            mapText += '  ↳ ' + linkedNote.title + '\n';
+          }
+        });
+      }
+    });
+    return mapText;
+  }
+
+  // Cytoscape graph rendering useEffect
+  useEffect(() => {
+    if (graphView !== 'graph') return;
+    if (!graphContainerRef.current) return;
+
+    if (!cyRef.current) {
+      // Initialize cytoscape instance
+      cyRef.current = cytoscape({
+        container: graphContainerRef.current,
+        boxSelectionEnabled: false,
+        autounselectify: true,
+        style: [
+          {
+            selector: 'node',
+            style: {
+              content: 'data(label)',
+              'text-valign': 'center',
+              color: '#ffffff',
+              'text-outline-width': 2,
+              'text-outline-color': '#2f80ed',
+              'background-color': '#2f80ed',
+              width: 'label',
+              height: 'label',
+              padding: '6px 12px',
+              'font-size': 12,
+              'font-weight': 600,
+              shape: 'roundrectangle',
+            },
+          },
+          {
+            selector: 'edge',
+            style: {
+              width: 2,
+              'line-color': '#bbb',
+              'target-arrow-color': '#bbb',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+            },
+          },
+          {
+            selector: 'node:selected',
+            style: {
+              'background-color': '#1366d6',
+              'text-outline-color': '#1366d6',
+            },
+          },
+        ],
+        elements: [],
+        layout: { name: 'breadthfirst', directed: true, padding: 10 },
+      });
+      cyRef.current.on('tap', 'node', (evt) => {
+        const id = evt.target.id();
+        selectNote(id);
+      });
+    }
+    // Clear and add nodes and edges
+    cyRef.current.elements().remove();
+
+    const cyNodes = notes.map((n) => ({ data: { id: n.id, label: n.title } }));
+    const cyEdges = [];
+    notes.forEach((n) => {
+      n.outgoingLinks.forEach((oid) => {
+        cyEdges.push({ data: { source: n.id, target: oid } });
+      });
+    });
+    cyRef.current.add(cyNodes);
+    cyRef.current.add(cyEdges);
+    cyRef.current.layout({ name: 'breadthfirst', directed: true, padding: 10 }).run();
+  }, [graphView, notes]);
+
+  // Update outgoing links when note body changes
+  useEffect(() => {
+    if (!selectedNoteId) return;
+    const note = findNoteById(selectedNoteId);
+    if (!note) return;
+    updateOutgoingLinks(note.id, note.body);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes.find((n) => n.id === selectedNoteId)?.body]);
+
+  // Keyboard handlers for accessibility on Tags and Notes list
+  function handleTagKeyDown(event, tag) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleTagFilter(tag);
+    }
+  }
+  function handleNoteKeyDown(event, id) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectNote(id);
+    }
+  }
+
+  // Currently selected note content
+  const selectedNote = selectedNoteId ? findNoteById(selectedNoteId) : null;
+
+  // Markdown rendered HTML
+  const markdownHTML = selectedNote ? marked.parse(selectedNote.body || '') : '';
+
+  // Tags input handler
+  const onTagInputKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (newTagInput.trim() !== '') {
+        addTagToNote(newTagInput.trim());
+        setNewTagInput('');
+      }
+    }
+  };
+
+  // Manual link add handler
+  const onAddLinkClick = () => {
+    if (!selectedNoteId) return;
+    if (manualLinkInput.trim() === '') {
+      alert('Enter a note title to link');
+      return;
+    }
+    addLinkBetweenNotes(selectedNoteId, manualLinkInput.trim());
+    setManualLinkInput('');
+  };
+
+  return (
+    <div style={styles.appContainer}>
+      <header style={styles.header}>Note App</header>
+
+      <main style={styles.main} role="main">
+        <nav style={styles.sidebar} aria-label="Note navigation">
+          <div style={styles.sidebarHeader}>
+            <input
+              type="text"
+              placeholder="Search notes..."
+              aria-label="Search notes"
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              style={styles.searchInput}
+            />
+            <div style={styles.tagFilter} aria-label="Filter notes by tag">
+              {getAllTags().map((tag) => (
+                <div
+                  key={tag}
+                  style={styles.tagChip(activeTagFilters.has(tag))}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={activeTagFilters.has(tag)}
+                  onClick={() => toggleTagFilter(tag)}
+                  onKeyDown={(e) => handleTagKeyDown(e, tag)}
+                >
+                  {tag}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={styles.notesList}
+            tabIndex={0}
+            aria-label="Notes list"
+          >
+            {filterNotes().length === 0 ? (
+              <div style={styles.noNotesFound}>No notes found</div>
+            ) : (
+              filterNotes().map((note) => (
+                <div
+                  key={note.id}
+                  style={styles.noteItem(note.id === selectedNoteId)}
+                  tabIndex={0}
+                  role="button"
+                  aria-pressed={note.id === selectedNoteId}
+                  onClick={() => selectNote(note.id)}
+                  onKeyDown={(e) => handleNoteKeyDown(e, note.id)}
+                >
+                  {note.title}
+                </div>
+              ))
+            )}
+          </div>
+        </nav>
+
+        <section
+          style={styles.mainContent}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <div style={styles.noteHeader}>
+            <h2 style={styles.noteTitle}>
+              {selectedNote ? selectedNote.title : 'Select or create a note'}
+            </h2>
+            <div style={styles.tagInput} aria-label="Note tags" tabIndex={0}>
+              {selectedNote &&
+                selectedNote.tags.map((tag) => (
+                  <div
+                    key={tag}
+                    style={styles.tagBubble}
+                    title={`Remove tag "${tag}"`}
+                  >
+                    {tag}
+                    <span
+                      style={styles.closeSpan}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Remove tag ${tag}`}
+                      onClick={() => removeTagFromNote(tag)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          removeTagFromNote(tag);
+                        }
+                      }}
+                    >
+                      &times;
+                    </span>
+                  </div>
+                ))}
+              <input
+                type="text"
+                id="new-tag-input"
+                placeholder="Add tag and press enter"
+                aria-label="Add tag"
+                value={newTagInput}
+                onChange={(e) => setNewTagInput(e.target.value)}
+                onKeyDown={onTagInputKeyDown}
+                style={styles.tagInputField}
+              />
+            </div>
+          </div>
+
+          <div style={styles.noteBodyContainer}>
+            <textarea
+              id="note-textarea"
+              placeholder="Write your markdown note here..."
+              aria-label="Note body"
+              value={selectedNote ? selectedNote.body : ''}
+              onChange={(e) => {
+                updateNoteBody(e.target.value);
+                updateOutgoingLinks(selectedNoteId, e.target.value);
+              }}
+              style={{
+                ...styles.textarea,
+                ...(textareaFocused ? styles.textareaFocus : {}),
+              }}
+              onFocus={() => setTextareaFocused(true)}
+              onBlur={() => setTextareaFocused(false)}
+              ref={textareaRef}
+              disabled={!selectedNote}
+            />
+            <article
+              style={styles.markdownPreview}
+              aria-label="Markdown preview"
+              dangerouslySetInnerHTML={{ __html: markdownHTML }}
+            />
+          </div>
+
+          <div style={styles.noteInfo}>
+            <section style={styles.noteInfoSection} aria-label="Outgoing links">
+              <h3 style={styles.noteInfoH3}>Outgoing Links</h3>
+              <ul style={styles.linkList}>
+                {selectedNote && selectedNote.outgoingLinks.length > 0 ? (
+                  selectedNote.outgoingLinks.map((oid) => {
+                    const outNote = findNoteById(oid);
+                    if (!outNote) return null;
+                    return (
+                      <li
+                        key={oid}
+                        style={styles.linkListItem}
+                        tabIndex={0}
+                        onClick={() => selectNote(oid)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            selectNote(oid);
+                          }
+                        }}
+                      >
+                        {outNote.title}
+                      </li>
+                    );
+                  })
+                ) : (
+                  <em>No outgoing links</em>
+                )}
+              </ul>
+            </section>
+
+            <section style={styles.noteInfoSection} aria-label="Backlinks">
+              <h3 style={styles.noteInfoH3}>Backlinks</h3>
+              <ul style={styles.linkList}>
+                {selectedNote &&
+                notes.some((n) => n.outgoingLinks.includes(selectedNote.id)) ? (
+                  notes
+                    .filter((n) => n.outgoingLinks.includes(selectedNote.id))
+                    .map((n) => (
+                      <li
+                        key={n.id}
+                        style={styles.linkListItem}
+                        tabIndex={0}
+                        onClick={() => selectNote(n.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            selectNote(n.id);
+                          }
+                        }}
+                      >
+                        {n.title}
+                      </li>
+                    ))
+                ) : (
+                  <em>No backlinks</em>
+                )}
+              </ul>
+            </section>
+          </div>
+
+          <div style={styles.manualLink} aria-label="Manual link notes">
+            <input
+              type="text"
+              placeholder="Enter note title to link"
+              aria-label="Enter note title to link"
+              value={manualLinkInput}
+              onChange={(e) => setManualLinkInput(e.target.value)}
+              disabled={!selectedNote}
+              style={styles.manualLinkInput}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onAddLinkClick();
+                }
+              }}
+            />
+            <button
+              id="add-link-btn"
+              aria-label="Add link"
+              onClick={onAddLinkClick}
+              disabled={!selectedNote}
+              style={styles.manualLinkButton}
+              onMouseDown={(e) => e.preventDefault()} // prevent textarea blur
+            >
+              Add Link
+            </button>
+          </div>
+
+          <div style={styles.viewToggle} role="radiogroup" aria-label="Toggle note graph view">
+            <button
+              style={styles.viewToggleButton(graphView === 'text')}
+              role="radio"
+              aria-checked={graphView === 'text'}
+              onClick={() => setGraphView('text')}
+              type="button"
+              tabIndex={0}
+            >
+              Text Map
+            </button>
+            <button
+              style={styles.viewToggleButton(graphView === 'graph')}
+              role="radio"
+              aria-checked={graphView === 'graph'}
+              onClick={() => setGraphView('graph')}
+              type="button"
+              tabIndex={0}
+            >
+              Graph View
+            </button>
+          </div>
+
+          {graphView === 'text' && (
+            <pre style={styles.textMap} aria-label="Text-based note graph map">
+              {renderTextMap()}
+            </pre>
+          )}
+
+          {graphView === 'graph' && (
+            <div
+              id="graph-container"
+              ref={graphContainerRef}
+              style={styles.graphContainer}
+              aria-label="Note graph visualization"
+            />
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default NoteApp;
+
